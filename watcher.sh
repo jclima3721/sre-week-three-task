@@ -84,14 +84,20 @@ while true; do
 
   log "Current restart count for $DEPLOYMENT_NAME: $POD_RESTART_COUNT"
 
-  # Take action if the restart limit is exceeded
-  if [ "$POD_RESTART_COUNT" -gt "$MAX_RESTARTS" ]; then
+# Take action if the restart limit is exceeded
+# Ensure POD_RESTART_COUNT has a numeric value, defaulting to 0 if unset
+POD_RESTART_COUNT=${POD_RESTART_COUNT:-0}
+
+# Check if the restart count exceeds the maximum allowed restarts
+if [ "$POD_RESTART_COUNT" -gt "$MAX_RESTARTS" ]; then
     log "Restart limit exceeded. Scaling down the deployment..."
-    kubectl_retry scale deployment/$DEPLOYMENT_NAME --replicas=0 --namespace="$NAMESPACE"
-    if [ $? -ne 0 ]; then
-      log "Error scaling down deployment, will retry..."
-      continue
+    
+    # Attempt to scale down the deployment
+    if ! kubectl_retry scale deployment/$DEPLOYMENT_NAME --replicas=0 --namespace="$NAMESPACE"; then
+        log "Error scaling down deployment, will retry..."
+        continue  # Continue the loop to retry the operation
     fi
+fi
 
     log "Checking for network-related issues..."
     kubectl_retry get events --namespace "$NAMESPACE" -o custom-columns=TIME:.lastTimestamp,MESSAGE:.message | grep -i "network"
