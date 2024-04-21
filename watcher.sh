@@ -18,11 +18,11 @@
 # It is designed to run continuously, checking the pod restart count every minute.
 
 # Define variables
-NAMESPACE="sre"                  # Kubernetes namespace where the deployment is located
-DEPLOYMENT_NAME="swype-app"      # Name of the deployment (aaplication) to monitor
-MAX_RESTARTS=3                   # Maximum allowed restarts before taking action
-LOG_FILE="./swype_monitoring.log"  # Path to the log file
-LOG_DURATION_DAYS=7              # Number of days to retain old log files
+NAMESPACE="sre"
+DEPLOYMENT_NAME="swype-app"
+MAX_RESTARTS=3
+LOG_FILE="./swype_monitoring.log"
+LOG_DURATION_DAYS=7
 
 # Function: log
 # Description: Logs a message with a timestamp to both the console and a log file.
@@ -56,49 +56,35 @@ kubectl_retry() {
   local retries=3
   local count=0
   local delay=10
-  local cmd_status=0
-
   until kubectl "$@"; do
-    cmd_status=$?
     count=$(($count + 1))
     if [ $count -ge $retries ]; then
-      log "Comand failed after $retries attempts: kubectl $*"
-      return $cmd_status
+      log "Command failed after $retries attempts: kubectl $*"
+      return 1
     fi
-    log "Attempt $count failed! Retying in $delay seconds..."
+    log "Attempt $count failed! Retrying in $delay seconds..."
     sleep $delay
   done
+  return 0
 }
 
 # Main monitoring loop
 while true; do
-  manage_logs  # Manage log files at the start of each loop
-
-  # Get the restart count of pods in the deployment
+  manage_logs
+  
+  # Get the restart count of pods
   POD_RESTART_COUNT=$(kubectl_retry get pods --namespace="$NAMESPACE" -l app=$DEPLOYMENT_NAME -o jsonpath='{.items[*].status.containerStatuses[*].restartCount}' | awk '{s+=$1} END {print s}')
-  if [ $? -ne 0 ]; then
-    log "Error fetching pod restart count, will retry..."
-    sleep 60
-    continue
-  fi
-
+  POD_RESTART_COUNT=${POD_RESTART_COUNT:-0}
+  
   log "Current restart count for $DEPLOYMENT_NAME: $POD_RESTART_COUNT"
-
-# Take action if the restart limit is exceeded
-# Ensure POD_RESTART_COUNT has a numeric value, defaulting to 0 if unset
-POD_RESTART_COUNT=${POD_RESTART_COUNT:-0}
-
-# Check if the restart count exceeds the maximum allowed restarts
-if [ "$POD_RESTART_COUNT" -gt "$MAX_RESTARTS" ]; then
+  
+  if [ "$POD_RESTART_COUNT" -gt "$MAX_RESTARTS" ]; then
     log "Restart limit exceeded. Scaling down the deployment..."
-    
-    # Attempt to scale down the deployment
     if ! kubectl_retry scale deployment/$DEPLOYMENT_NAME --replicas=0 --namespace="$NAMESPACE"; then
-        log "Error scaling down deployment, will retry..."
-        continue  # Continue the loop to retry the operation
+      log "Error scaling down deployment, will retry..."
+      continue  # Continue the loop to retry the operation
     fi
-fi
-
+    
     log "Checking for network-related issues..."
     kubectl_retry get events --namespace "$NAMESPACE" -o custom-columns=TIME:.lastTimestamp,MESSAGE:.message | grep -i "network"
     log "Deployment scaled down due to excessive restarts. Monitoring halted."
@@ -106,8 +92,8 @@ fi
   else
     log "Restart count within limits. Checking again in 60 seconds..."
   fi
-
-  sleep 60  # Wait for 60 seconds before the next check
+  
+  sleep 60
 done
 
 log "Script completed."

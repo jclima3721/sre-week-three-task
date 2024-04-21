@@ -6,3 +6,5 @@ watcher.sh: line 88: [: : integer expression expected
 2024-04-21 12:39:37: Current restart count for swype-app: 
 watcher.sh: line 88: [: : integer expression expected
 2024-04-21 12:39:37: Restart count within limits. Checking again in 60 seconds...
+watcher.sh: line 106: syntax error near unexpected token `else'
+watcher.sh: line 106: `  else'
